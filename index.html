@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Log Time Correcter</title>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<style>
+			label{
+				display:block
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Log Time Correcter</h1>
+		<p>Wrote Some code for correcting times in my dive log on MacDive after doing several dives with a dive computer that was set to the wrong time and date. This is that, with a quickie HTML interface. Could maybe be useful for other things though.</p>
+		
+		
+		<h4>What time did your dive computer say it was when you corrected it?</h4>
+		<label>Wrong Date:<input id="wrong_date" type="date"></label>
+		<label>Wrong Time:<input id="wrong_time" type="time"></label>
+		
+		<h4>What time was it really when you reset your dive computer?</h4>
+		<label>Right Date:<input id="right_date" type="date"></label>
+		<label>Right Time:<input id="right_time" type="time"></label>
+		
+		<h4>Calculated difference, in Milliseconds</h4>
+		<label id="dif_display">-</label>
+		
+		<h4>Enter the dive log time in the format it's shown in MacDive (m/d/yy, hh:mm AM/PM)</h4>
+		<label>Log time:<input id="log_time" type="text"></label>
+		<b style='color:red; display:none;' id='log-time-error'>Invalid format</b>
+		
+		<h4>Correct log time:</h4>
+		<span id='output'></span>
+		
+		<script>
+			var offset_ms = 0;
+			const wrong_date_input = document.getElementById('wrong_date');
+			const wrong_time_input = document.getElementById('wrong_time');
+			const right_date_input = document.getElementById('right_date');
+			const right_time_input = document.getElementById('right_time');
+			const diff_display_label = document.getElementById('dif_display');
+			const log_time_input = document.getElementById('log_time');
+			const log_time_error = document.getElementById('log-time-error');
+			const output_span = document.getElementById('output');
+			
+			var default_wrong_date = localStorage.getItem('wrong_date') || '2020-10-07';
+			var default_wrong_time = localStorage.getItem('wrong_time') || '09:12';
+			var default_right_date = localStorage.getItem('right_date') || '2021-01-17';
+			var default_right_time = localStorage.getItem('right_time') || '20:42';
+			var default_log_time = localStorage.getItem('log_time') || '9/27/20, 8:11 AM';
+			
+			var dt_inputs = [
+				wrong_date_input, 
+				wrong_time_input, 
+				right_date_input, 
+				right_time_input
+			];
+			
+			wrong_date_input.value = default_wrong_date;
+			wrong_time_input.value = default_wrong_time;
+			right_date_input.value = default_right_date;
+			right_time_input.value = default_right_time;
+			calculateDifference();
+			
+			log_time_input.value = default_log_time;
+			calculateLogTime();
+			
+			dt_inputs.forEach(input=>{
+				input.addEventListener('input', e=>{
+					e.preventDefault();
+					for(let i=0; i<dt_inputs.length; i++){
+						if(!dt_inputs[i].value) return;
+					}
+					localStorage.getItem('wrong_date', wrong_date_input.value);
+					localStorage.getItem('wrong_time', wrong_time_input.value);
+					localStorage.getItem('right_date', right_date_input.value);
+					localStorage.getItem('right_time', right_time_input.value);
+					calculateDifference();
+				});
+			});
+			
+			log_time_input.addEventListener('input', calculateLogTime);
+			
+			function calculateLogTime(){
+				var input = log_time_input.value;
+				var pattern = /^\d{1,2}\/\d{1,2}\/\d{2}\,\s\d{1,2}\:\d{2}\s[A|P]M$/;
+				if(!pattern.test(input)){
+					log_time_error.style.display = 'block';
+					return;
+				}
+				
+				log_time_error.style.display = 'none';
+				
+				var [date, time] = log_time_input.value.split(', ');
+				var [month, day, year] = date.split("/");
+				var [hour, minute, meridian] = time.split(/[\:\s]/g);
+
+				[month, day, year, hour, minute] = [month, day, '20'+year, hour, minute].map(d=>+d);
+				month--;
+				if(meridian === 'AM' && hour === 12){
+					hour = 0;
+				}else if(meridian === 'PM' && hour > 12){
+					hour += 12;
+				}
+
+				var orig_time = new Date(year, month, day, hour, minute);
+				orig_time.setMilliseconds(orig_time.getMilliseconds() + offset_ms);
+				
+				var mo = orig_time.getMonth() + 1;
+				var d = orig_time.getDate();
+				var y = String(orig_time.getFullYear()).substr(-2);
+				var h = orig_time.getHours();
+				var m = orig_time.getMinutes();
+				var p = 'AM';
+
+				if(12 === h){
+					p = 'PM';
+				} else if (h >= 12) {
+					h -= 12;
+					p = 'PM';
+				}else if (h == 0) {
+					h = 12;
+				}
+
+				var new_date = `${mo}/${d}/${y}, ${h}:${m} ${p}`;
+				output_span.innerHTML = new_date;
+			}
+			
+			function calculateDifference(){
+				var wrong_time = userInputDtToDate(wrong_date_input.value, wrong_time_input.value);
+				var right_time = userInputDtToDate(right_date_input.value, right_time_input.value);
+				offset_ms = right_time - wrong_time;
+				diff_display_label.innerHTML = offset_ms;
+			}
+			
+			function userInputDtToDate(dateval, timeval){
+				var [yr, mo, dt] = dateval.split("-").map(d=>+d);
+				var [hr, min] = h24ToH12(timeval);
+				return new Date(yr, mo-1, dt, hr, min);
+			}
+			
+			function h24ToH12(h12){
+				var [hour, minute, meridian] = h12.toUpperCase().trim().split(/[\:\s]/g);
+				[hour, minute] = [hour, minute].map(d=>+d);
+				if(meridian === 'AM' && hour === 12){
+					hour = 0;
+				}else if(meridian === 'PM' && hour > 12){
+					hour += 12;
+				}
+				return [hour, minute];
+			}
+		</script>
+	</body>
+</html>
